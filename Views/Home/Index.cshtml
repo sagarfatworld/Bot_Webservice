@@ -1,0 +1,75 @@
+﻿@{
+    ViewData["Title"] = "Login";
+    var callbackUrl = $"{Context.Request.Scheme}://{Context.Request.Host}/Home/Callback";
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        Bot Assistant Panel
+    </title>
+    <link rel="stylesheet" href="~/css/login.css">
+</head>
+<body>
+    <div class="login-container">
+        @if (User.Identity.IsAuthenticated)
+        {
+            @* <h1>Welcome Back!</h1> *@
+            <div class="text-center">
+                <p>You are already logged in.</p>
+                <form asp-action="Logout" asp-controller="Home" method="post">
+                    <button type="submit" class="login-button">Logout</button>
+                </form>
+            </div>
+        }
+        else
+        {
+            <h1>Login</h1>
+
+            <div class="login-form">
+                <div class="input-group">
+                    <input type="email" id="email" placeholder="Microsoft Email" required>
+                </div>
+                <div class="input-group">
+                    <input type="password" id="password" placeholder="Password" required>
+                </div>
+                <button class="login-button" onclick="login()">Sign In</button>
+            </div>
+
+            <div class="divider">
+                <span>OR</span>
+            </div>
+
+            <a class="microsoft-login" href="#" onclick="login(); return false;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" alt="Microsoft Logo">
+                <span>Sign in with Microsoft</span>
+            </a>
+
+            @if (TempData["Error"] != null)
+            {
+                <div class="error-message">@TempData["Error"]</div>
+            }
+        }
+    </div>
+
+    @if (ViewData["Error"] != null)
+    {
+        <div class="error-message">@ViewData["Error"]</div>
+    }
+
+    <script>
+        function login() {
+            const callbackUrl = "@callbackUrl";
+            const appId = "Beta@Work";
+            const loginUrl = `https://api.botatwork.com/azure/login?app_id=${appId}&callback_url=${encodeURIComponent(callbackUrl)}`;
+            window.location.href = loginUrl;
+        }
+    </script>
+</body>
+</html>
+
+

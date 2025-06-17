@@ -1,0 +1,249 @@
+﻿@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@{
+    ViewData["Title"] = "Bot Assistant";
+    Layout = null;
+    var userEmail = ViewBag.UserEmail ?? Context.Session.GetString("UserEmail");
+    var token = Antiforgery.GetAndStoreTokens(Context).RequestToken;
+    System.Diagnostics.Debug.WriteLine($"UserEmail being used: {userEmail}");
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Bot Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="~/css/dashboard.css" asp-append-version="true" />
+</head>
+<body>
+    <form asp-action="Logout" asp-controller="Home" method="post" style="position: absolute; top: 20px; right: 20px;">
+        <button type="submit" class="logout-button">Logout</button>
+    </form>
+
+    <div class="container">
+        <h2>🤖 Bot Assistant Panel</h2>
+        <div id="chatButtons" class="chat-buttons"></div>
+        <div id="conversation" class="conversation">
+            <!-- Q&A pairs will appear here -->
+        </div>
+        <div class="footer">Powered by Bot@Work</div>
+    </div>
+
+    <script>
+        const userEmail = '@Html.Raw(Json.Serialize(userEmail))'.replace(/['"]+/g, '');
+        console.log('Agent Email:', userEmail);
+
+        let lastAnswerBox = null;
+        let lastCopyIcon = null;
+        let conversationHistory = [];
+        let currentChatId = null;
+        let lastMessageCount = 0;
+        let shownMessages = new Set(); 
+
+        function appendQA(question, answer) {
+            const convDiv = document.getElementById("conversation");
+            const pairDiv = document.createElement("div");
+            pairDiv.className = "qa-pair";
+
+            const qLabel = document.createElement("div");
+            qLabel.className = "label";
+            qLabel.innerText = "Visitor Question:";
+
+            const qBox = document.createElement("div");
+            qBox.className = "box";
+            qBox.innerText = question;
+
+            const aLabel = document.createElement("div");
+            aLabel.className = "label";
+            aLabel.innerText = "Bot's Answer:";
+
+            const aBox = document.createElement("div");
+            aBox.className = "box";
+            aBox.innerText = answer;
+
+            const copyFeedback = document.createElement("div");
+            copyFeedback.className = "copy-feedback";
+            copyFeedback.textContent = "Copied!";
+            copyFeedback.style.display = 'none';
+            aBox.appendChild(copyFeedback);
+
+            const copyIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            copyIcon.setAttribute("width", "20");
+            copyIcon.setAttribute("height", "20");
+            copyIcon.setAttribute("viewBox", "0 0 24 24");
+            copyIcon.setAttribute("fill", "none");
+            copyIcon.setAttribute("stroke", "currentColor");
+            copyIcon.setAttribute("stroke-width", "2");
+            copyIcon.setAttribute("stroke-linecap", "round");
+            copyIcon.setAttribute("stroke-linejoin", "round");
+            copyIcon.classList.add("copy-icon");
+            copyIcon.innerHTML = `
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                `;
+
+            copyIcon.onclick = async () => {
+                try {
+                    await navigator.clipboard.writeText(aBox.innerText);
+
+                    await fetch('/Home/StoreMessage', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'RequestVerificationToken': '@token'
+                        },
+                        body: JSON.stringify({
+                            chatId: currentChatId,
+                            visitorMessage: question,
+                            botResponse: answer
+                        })
+                    });
+
+                    await fetch('/Home/UpdateCopyStatus', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'RequestVerificationToken': '@token'
+                        },
+                        body: JSON.stringify({
+                            messageHash: await generateMessageHash(currentChatId, question, answer)
+                        })
+                    });
+
+                    copyFeedback.style.display = 'block';
+                    setTimeout(() => {
+                        copyFeedback.style.display = 'none';
+                    }, 2000);
+                } catch (err) {
+                    console.error('Failed to copy or store:', err);
+                }
+            };
+
+            aBox.appendChild(copyIcon);
+            pairDiv.appendChild(qLabel);
+            pairDiv.appendChild(qBox);
+            pairDiv.appendChild(aLabel);
+            pairDiv.appendChild(aBox);
+
+            convDiv.appendChild(pairDiv);
+            convDiv.scrollTop = convDiv.scrollHeight;
+
+            lastAnswerBox = aBox;
+            lastCopyIcon = copyIcon;
+        }
+
+        async function generateMessageHash(chatId, visitorMessage, botResponse) {
+            const message = `${chatId}|${visitorMessage}|${botResponse}`;
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashBase64 = btoa(String.fromCharCode(...hashArray));
+            return hashBase64;
+        }
+
+        async function fetchChats() {
+            try {
+                const encodedEmail = encodeURIComponent(userEmail);
+                const url = `/livechat/chats/${encodedEmail}`;
+                //const url = `https://livechatapi-512429445794.us-central1.run.app/livechat/chats/${encodedEmail}`;
+                const response = await fetch(url);
+                const chats = await response.json();
+
+                const buttonContainer = document.getElementById('chatButtons');
+                buttonContainer.innerHTML = '';
+
+                if (chats && chats.length > 0) {
+                    if (chats.length > 1) {
+                        chats.forEach(chat => {
+                            const button = document.createElement('button');
+                            button.className = 'chat-button';
+                            button.textContent = chat.chatId;
+                            button.onclick = () => {
+                                if (chat.chatId !== currentChatId) {
+                                    showChat(chat.chatId);
+                                }
+                            };
+                            buttonContainer.appendChild(button);
+                        });
+                    } else {
+                        if (chats[0].chatId !== currentChatId) {
+                            showChat(chats[0].chatId);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching chats:', error);
+            }
+        }
+
+        async function showChat(chatId) {
+            try {
+                currentChatId = chatId;
+                lastMessageCount = 0;
+                shownMessages.clear(); 
+                const conversationDiv = document.getElementById("conversation");
+                conversationDiv.innerHTML = '';
+                await updateCurrentChat();
+            } catch (error) {
+                console.error('Error in showChat:', error);
+            }
+        }
+
+        async function updateCurrentChat() {
+            if (!currentChatId) return;
+            try {
+                const url = `/livechat/chats/${encodeURIComponent(userEmail)}`;
+
+                //const url = `https://livechatapi-512429445794.us-central1.run.app/livechat/chats/${encodeURIComponent(userEmail)}`;
+                const response = await fetch(url);
+                const chats = await response.json();
+                const currentChat = chats.find(chat => chat.chatId === currentChatId);
+
+                if (currentChat && currentChat.messages) {
+                    const messages = currentChat.messages;
+
+                    for (const message of messages) {
+                        const hashKey = `${message.visitorMessage}|${message.botResponse}`;
+                        if (!shownMessages.has(hashKey)) {
+                            shownMessages.add(hashKey); 
+                            try {
+                                await fetch('/Home/StoreMessage', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'RequestVerificationToken': '@token'
+                                    },
+                                    body: JSON.stringify({
+                                        chatId: currentChatId,
+                                        visitorMessage: message.visitorMessage,
+                                        botResponse: message.botResponse
+                                    })
+                                });
+                                appendQA(message.visitorMessage, message.botResponse);
+                            } catch (storeError) {
+                                console.error('Error storing message:', storeError);
+                            }
+                        }
+                    }
+
+                    lastMessageCount = messages.length;
+                }
+            } catch (error) {
+                console.error('Error updating current chat:', error);
+            }
+        }
+
+        window.onload = function () {
+            console.log('Starting with email:', userEmail);
+            fetchChats();
+            setInterval(async () => {
+                await fetchChats();
+                if (currentChatId) {
+                    await updateCurrentChat();
+                }
+            }, 2000);
+        };
+    </script>
+
+</body>
+</html>

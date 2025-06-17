@@ -1,0 +1,22 @@
+﻿@{
+    ViewData["Title"] = "Login Callback";
+}
+
+<div class="container mt-4">
+    <h2>Login Result</h2>
+    @if (!string.IsNullOrEmpty(ViewBag.Message))
+    {
+        <div class="alert @(ViewBag.Message.Contains("successful") ? "alert-success" : "alert-danger")">
+            @ViewBag.Message
+        </div>
+    }
+
+    @if (Context.Session.GetString("AccessToken") != null)
+    {
+        <div class="alert alert-success">
+            <p>Successfully logged in and stored tokens!</p>
+        </div>
+    }
+
+    <a href="@Url.Action("Index", "Home")" class="btn btn-primary">Return to Home</a>
+</div>
