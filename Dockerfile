@@ -1,19 +1,18 @@
-# Use ASP.NET Core runtime
-FROM mcr.microsoft.com/dotnet/aspnet:7.0 AS base
-WORKDIR /app
-EXPOSE 80
-
-# Use .NET SDK to build the app
+# Use the official .NET SDK image to build the app
 FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build
 WORKDIR /src
 
-# Copy the project files and build
+# Copy everything into the container
 COPY . .
-RUN dotnet publish "Botatwork_in_Livechat.csproj" -c Release -o /app/publish
 
-# Final image
-FROM base AS final
+# Go into the folder where the .csproj file is located
+WORKDIR "/src/Botatwork in Livechat"
+
+# Publish the application
+RUN dotnet publish "Botatwork in Livechat.csproj" -c Release -o /app/publish
+
+# Final runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:7.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
-
-ENTRYPOINT ["dotnet", "Botatwork_in_Livechat.dll"]
+ENTRYPOINT ["dotnet", "Botatwork in Livechat.dll"]
